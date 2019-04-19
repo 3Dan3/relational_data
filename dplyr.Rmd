@@ -1,0 +1,246 @@
+---
+title: "dplyr table joins"
+author: "DanielH"
+date: "April 16, 2019"
+output:
+  github_document:
+    toc: true
+    toc_depth: 2
+  html_notebook:
+    theme: readable
+  html_document: default
+  pdf_document: default
+  keep_md: yes
+---
+
+```{r, message=FALSE}
+
+library(tidyverse)
+library(nycflights13)
+library(dslabs)
+```
+
+---
+
+For the following examples we use data from the `dslabs` package, more specifically we use the `murders` and the `results_us_election_2016` datasets. Both datasets have 51 obs (rows).
+For semplicity, we then use subsets of those datasets
+
+We will also use flights data from the nycflights13 package 
+
+```{r}
+
+murders <-
+  murders  %>%
+  as_tibble()
+
+# subset
+tab1 <-
+  murders %>%
+  slice(1:6) %>%
+  select(state, population)
+  
+
+
+results_us_election_2016 <-
+  results_us_election_2016 %>%
+  as_tibble()
+
+# subset
+tab2 <-
+  results_us_election_2016 %>%
+  filter(state %in% c("Alabama", "Alaska", "Arizona", 
+                      "California", "Connecticut", "Delaware")) %>%
+  select(state, electoral_votes)
+```
+
+---
+
+### keys
+
+>The variables used to connect each pair of tables are called keys. A key is a variable (or set of variables) that uniquely identifies an observation
+
+In simple cases, a single variable is sufficient to identify an observation.
+In other cases, multiple variables may be needed.
+
+There are two types of keys
+
+* A __primary key__ uniquely identifies an observation in its own table. 
+
+* A __foreign key__ uniquely identifies an observation in another table. 
+
+
+A variable can be both a primary key and a foreign key. 
+
+Once we’ve identified the primary keys in your tables, it’s good practice to verify that they do indeed uniquely identify each observation. One way to do that is to `count()` the primary keys and look for entries where n is greater than one:
+
+```{r}
+planes %>%
+  count(tailnum) %>%
+  filter(n > 1)
+```
+
+As a second example we now check keys for the weather table
+
+```{r}
+weather %>%
+  count(year, month, day, hour, origin) %>%
+  filter(n > 1)
+```
+
+In this case the keys don't uniquely identify each observation in the table
+
+Sometimes a table doesn’t have an explicit primary key: each row is an observation, but no combination of variables reliably identifies it. 
+
+
+
+## mutating joins
+
+>A mutating join allows you to combine variables from two tables. It first matches observations by their keys, then copies across variables from one table to the other.
+
+Like `dplyr::mutate()`, the join functions add variables to the right
+
+
+
+### inner join
+
+>Return all rows from x where there are matching values in y, and all columns from x and y. If there are multiple matches between x and y, all combination of the matches are returned
+
+We use this join when we want to keep only the rows that have information in both tables
+
+!["inner join"](tables/inner_join_tab.PNG) 
+
+__The most important property of an inner join is that unmatched rows are not included in the result__
+
+so, if we want to keep only the rows that have information in both tables, we use `inner_join`
+
+```{r}
+tab1 %>%
+  inner_join(tab2, by = "state")
+```
+
+### outer joins
+
+>An outer join keeps observations that appear in at least one of the tables. There are three types of outer joins
+
+!["outer joins"](tables/outer_joins_tab.PNG)
+
+
+__The most commonly used join is the left join: we use it whenever we look up additional data from another table, because it preserves the original observations even when there isn’t a match.__ 
+
+
+### left-join
+
+>Return all rows from x, and all columns from x and y. If there are multiple matches between x and y, all combination of the matches are returned. 
+
+Suppose we want to explore the relationship between population size for US states and electoral votes. We have the population size in one table and the electoral college in the other. We need a new table with the combined information, we need left_join in this case
+
+```{r}
+merged_tab <-
+  tab1 %>%
+  left_join(tab2)
+
+
+merged_tab
+  
+```
+
+Now we have a single table with both the required vars in it. Note that NAs are added to the two states not appearing in tab_2.
+
+### right-join
+
+>A right join returns all rows from the right table (y), and the matched records from the left table
+
+If instead of a table with the same rows as first table, we want one with the same rows as second table, we can use this type of join
+
+```{r}
+tab1 %>%
+  right_join(tab2)
+```
+
+Now the NAs are in the column coming from `tab_1`.
+
+## filtering joins
+
+>Filtering joins match observations in the same way as mutating joins, but affect the observations, not the variables. 
+
+Only the existence of a match is important; it doesn’t matter which observation is matched. This means that filtering joins never duplicate rows like mutating joins do:
+
+
+There are two types:
+
+1. `semi_join(x, y)` __keeps__ all observations in x that have a match in y
+
+2. `anti_join(x, y)` __drops__ all observations in x that have a match in y
+
+### semi join
+
+>Semi join return all rows from x where there are matching values in y, keeping just columns from x.
+
+A semi-joins differs from an inner join because an inner join will return one row of x for each matching row of y, where a semi jon will never dulicate rows of x
+
+Graphically, a semi-join looks like this
+
+!["__semi-join__"](tables/semi_join_tbl.PNG)
+
+
+```{r}
+tab1 %>%
+  semi_join(tab2, by = "state")
+
+
+tab2 %>%
+  semi_join(tab1, by = "state")
+```
+
+The 2 example use the same tabs, but in different order. The order of the x table is preserved
+
+
+### anti join
+
+>It returns all rows from x where there are not matching values in y, keeping just columns from x.
+
+It is the opposite of semi_join.    
+
+!["__anti-join__"](tables/anti_join_tbl.PNG)
+
+For example, we have:
+
+```{r}
+tab1 %>%
+  anti_join(tab2)
+```
+
+---
+
+#### duplicate keys
+
+So far, all the diagrams have assumed that the keys are unique. But that’s not always the case.
+
+When the keys are not unique there are two possibilities:
+
+1. __One table has duplicate keys__. This is useful when you want to add in additional information as there is typically a one-to-many relationship.
+
+!["duplicate keys"](tables/duplicate_tbl.PNG)
+
+
+2. __Both tables have duplicate keys__. This is usually an error because in neither table do the keys uniquely identify an observation.
+
+When we join duplicated keys, we get all possible combinations, the Cartesian product:
+
+!["duplicate keys in both tables"](tables/both_duplicates_tbl.PNG)
+
+
+#### defining key columns
+
+So far, the pairs of tables have always been joined by a single variable, and that variable has the same name in both tables.
+
+When we use join with  the default `by = NULL` the two tables are joined by all variables that appear in both tables, this is a __so-called natural join__
+
+Other times we can use a character vector, `by = "x"`. This is like a natural join, but uses only some of the common variables
+
+A third case is when we use a named character vector: `by = c("a" = "b")`. This will match variable a in table x to variable b in table y. _The variables from x will be used in the output_.
+
+---
+ 
+!["__recap_tbl__"](tables/recap_tbl.PNG)
+ 
